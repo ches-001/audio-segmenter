@@ -1,0 +1,56 @@
+network_config:
+  hidden_layers_config:
+    l1: 256
+    l2: 128
+    l3: 64
+  dropout: 0.1
+
+melspectrogram_config:
+  center: false
+  mel_scale: htk
+  n_mels: 20
+  norm: slaney
+  pad_mode: reflect
+  power: 2
+  win_length: null
+
+mfcc_config:
+  melkwargs:
+    center: false
+    mel_scale: htk
+    n_mels: 20
+    norm: slaney
+    pad_mode: reflect
+    power: 2
+    win_length: null
+  n_mfcc: 20
+
+sample_duration_ms: 10
+n_temporal_context: 6
+new_sample_rate: 16000
+taper_input: false
+taper_window: hann
+audio_extension: wav
+
+train_config:
+  class_map_path: "idx2class_mapping"
+  device: cuda
+  epochs: 200
+
+  optimizer_config:
+    betas: [0.9, 0.999]
+    eps: 1.0e-08
+    lr: 0.001
+    name: Adam
+    weight_decay: 0.002
+
+  lr_scheduler_config:
+    T_0: 200
+    T_mult: 1
+    eta_min: 1.0e-06
+    name: CosineAnnealingWarmRestarts
+
+  verbose: true
+  shuffle_samples: true
+  shuffler_buffer_size: 10_000
+  num_workers: 4
