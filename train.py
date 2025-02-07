@@ -212,7 +212,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Detection Network")
     parser.add_argument("--data_dir", type=str, metavar="", required=True, help="Dataset directory")
     parser.add_argument("--annotator", type=str, default="annotator_a", metavar="", help="Annotator label to use")
-    parser.add_argument("--batch_size", type=int, default=32, metavar="", help="Training batch size")
+    parser.add_argument("--batch_size", type=int, default=128, metavar="", help="Training batch size")
     parser.add_argument("--epochs", type=int, default=200, metavar="", help="Number of training epochs")
     parser.add_argument("--checkpoint_interval", type=int, default=10, metavar="", help="Number of epochs before persisting checkpoint to disk")
     parser.add_argument("--eval_interval", type=int, default=1, metavar="", help="Number of training steps before each evaluation")

@@ -90,7 +90,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Detection Network")
     parser.add_argument("--file_path", type=str, metavar="", required=True, help="Audio file path to run inference on")
     parser.add_argument("--model_path", type=str, metavar="", default="model_path", help="Model path")
-    parser.add_argument("--batch_size", type=int, default=32, metavar="", help="Training batch size")
+    parser.add_argument("--batch_size", type=int, default=128, metavar="", help="Training batch size")
     parser.add_argument("--mode_context", type=int, default=20, metavar="", help="Mode context for label smoothening")
     parser.add_argument("--min_cs_window", type=int, default=300, metavar="", help="Minimum change support window size")
 
