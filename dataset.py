@@ -42,22 +42,28 @@ class AudioTrainDataset(IterableDataset):
         worker_info = get_worker_info()
 
         if not worker_info:
-            file_chunks = self.files
+            files = self.files
         else:
             n_workers   = worker_info.num_workers
-            chunk_size  = len(self.files) // n_workers
-            chunk_start = chunk_size * worker_info.id
-            file_chunks = self.files[chunk_start : chunk_start + chunk_size]
+            job_size  = len(self.files) // n_workers
+            if job_size == 0:
+                if worker_info.id > len(self.files) - 1:
+                    files = []
+                else:
+                    files = self.files
+            else:
+                job_start = job_size * worker_info.id
+                files = self.files[job_start : job_start + job_size]
             
         file_idx = 0
                 
-        while file_idx < len(file_chunks):
+        while file_idx < len(files):
             segment_idx = 0
             segments    = self.annotations[self.files[file_idx]]
             
             while segment_idx < len(segments):
                 for sample in self.split_segments(
-                    file_chunks[file_idx], 
+                    files[file_idx], 
                     segments[str(segment_idx)],
                     segments[str(segment_idx-1)] if segment_idx != 0 else None,
                     segments[str(segment_idx+1)] if segment_idx+1 < len(segments) else None,
@@ -65,7 +71,7 @@ class AudioTrainDataset(IterableDataset):
                     self.n_temporal_context
                 ):
                     signal, _ = torchaudio.load(
-                        os.path.join(self.data_dir, file_chunks[file_idx] + f".{self.ext}"),
+                        os.path.join(self.data_dir, files[file_idx] + f".{self.ext}"),
                         frame_offset=int(sample["start"] * self.sample_rate),
                         num_frames=int((sample["end"] - sample["start"]) * self.sample_rate),
                         backend="soundfile"
