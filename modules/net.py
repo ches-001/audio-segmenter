@@ -71,7 +71,7 @@ class AudioSegmentationNet(nn.Module):
                 )
             x = x * self.taper_window[None, None, :].tile(1, x.shape[1], 1)
             
-        n_frames = (2 * self.config["n_temporal_context"]) + 1
+        context_size = (2 * self.config["n_temporal_context"]) + 1
         # ZCR size:               (N, Cf+1)
         # ZCR features size:      (N, 2)
         # mel_spectrogram size:   (N, 1, n_mel, Cf+1)
@@ -79,7 +79,7 @@ class AudioSegmentationNet(nn.Module):
         # spectral size:          (N, 2, n_mel, Cf+1)
         # spectral_features size: (N, 4*n_mel)
         # features size:          (N, (4*n_mel) + 2) (if n_mel = 20, then size is (N, 82))
-        zcr                = AudioSegmentationNet.compute_ZCR(x, n_frames=n_frames).squeeze(dim=1)
+        zcr                = AudioSegmentationNet.compute_ZCR(x, context_size=context_size).squeeze(dim=1)
         zcr_features       = torch.stack([zcr.mean(dim=1), zcr.std(dim=1)], dim=-1)
         mel_spectrogram    = self.melspectogram_tfmr(x)
         mel_spectrogram    = self.power_to_db_tfmr(mel_spectrogram)
@@ -113,11 +113,15 @@ class AudioSegmentationNet(nn.Module):
         return (x - mu) / (std + e)
     
     @staticmethod
-    def compute_ZCR(x: torch.Tensor, n_frames: int) -> torch.Tensor:
+    def compute_ZCR(x: torch.Tensor, context_size: int) -> torch.Tensor:
         # Input shape (x): (N, 1, Cf+1 * t_ms * SR)
-        # Cf+1 = n_frames
+        # Cf+1 = context_size
         assert (x.shape[1] == 1)
-        x            = x.reshape(x.shape[0], 1, n_frames, -1)
+        remainder = x.shape[-1] % context_size 
+        if remainder == 0:
+            x = x.reshape(x.shape[0], 1, context_size, -1)
+        else:
+            x = x[..., :x.shape[-1]-remainder].reshape(x.shape[0], 1, context_size, -1)
         sign_changes = x[..., :-1].sign() * x[..., 1:].sign()
         zcr          = (sign_changes < 0).float().sum(3) / x.shape[3]
         return zcr

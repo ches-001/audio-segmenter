@@ -2,3 +2,5 @@
 data
 saved_model
 notebook.ipynb
+download_data.py
+kaggle.json
