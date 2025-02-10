@@ -69,9 +69,15 @@ class AudioTrainDataset(IterableDataset):
             segment_idx  = 0
             segments     = self.annotations[self.files[file_idx]]
             segment_keys = list(segments.keys())
-            
+            exit_file    = False
+
             while segment_idx < len(segments):
+                exit_segment = False
+
                 for sample in self.split_segments(segments[str(segment_idx)]):
+                    if exit_segment:
+                        break
+
                     signal, _ = torchaudio.load(
                         os.path.join(self.data_dir, files[file_idx] + f".{self.ext}"),
                         frame_offset=math.floor(sample["start"] * self.sample_rate),
@@ -99,6 +105,8 @@ class AudioTrainDataset(IterableDataset):
                             )
                             if self.ignore_sample_error:
                                 LOGGER.warning(err_msg)
+                                exit_segment = True
+                                exit_file    = True
                                 continue
                             else:
                                 raise RuntimeError(err_msg)
@@ -108,6 +116,8 @@ class AudioTrainDataset(IterableDataset):
 
                     yield signal, class_, timeframe
 
+                if exit_file:
+                    break
                 segment_idx += 1
 
             file_idx += 1
