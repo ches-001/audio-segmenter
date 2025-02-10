@@ -1,5 +1,6 @@
 import os
 import math
+import logging
 import torch
 import random
 import torchaudio
@@ -8,7 +9,7 @@ from torch.utils.data import IterableDataset, get_worker_info
 from utils import load_yaml
 from typing import *
 
-NUMERICAL_STABILIZER = 1E-7
+LOGGER = logging.getLogger(__name__)
 
 class AudioTrainDataset(IterableDataset):
     def __init__(
@@ -16,7 +17,8 @@ class AudioTrainDataset(IterableDataset):
             data_dir: str,
             annotations: Dict[str, Any], 
             config: Union[str, Dict[str, Any]]="config/config.yaml", 
-            ext: str="wav"
+            ext: str="wav",
+            ignore_sample_error: bool=False
         ):
         if isinstance(config, str):
             config = load_yaml(config)
@@ -25,17 +27,18 @@ class AudioTrainDataset(IterableDataset):
         else:
             raise ValueError(f"config is expected to be str or dict type got {type(config)}")
         
-        self.data_dir           = data_dir
-        self.annotations        = annotations
-        self.ext                = ext
-        _files                  = os.listdir(self.data_dir)
-        self.annotations        = {k:self.annotations[k] for k in self.annotations.keys() if k+"."+self.ext in _files}
-        self.files              = list(self.annotations.keys())
-        self.sample_duration_ms = config["sample_duration_ms"]
-        self.n_temporal_context = config["n_temporal_context"]
-        temp_file               = os.path.join(self.data_dir, self.files[random.randint(0, len(self.files)-1)] + f".{self.ext}")
-        audio_metadata          = torchaudio.info(temp_file)
-        self.sample_rate        = audio_metadata.sample_rate
+        self.data_dir             = data_dir
+        self.annotations          = annotations
+        self.ext                  = ext
+        _files                    = os.listdir(self.data_dir)
+        self.annotations          = {k:self.annotations[k] for k in self.annotations.keys() if k+"."+self.ext in _files}
+        self.files                = list(self.annotations.keys())
+        self.sample_duration_ms   = config["sample_duration_ms"]
+        self.n_temporal_context   = config["n_temporal_context"]
+        temp_file                 = os.path.join(self.data_dir, self.files[random.randint(0, len(self.files)-1)] + f".{self.ext}")
+        audio_metadata            = torchaudio.info(temp_file)
+        self.sample_rate          = audio_metadata.sample_rate
+        self.ignore_sample_error = ignore_sample_error
 
         self._set_classes_details()
 
@@ -89,12 +92,16 @@ class AudioTrainDataset(IterableDataset):
                             signal = torch.cat([signal, zero_pad], dim=1)
                         else:
                             # This should not occur
-                            raise RuntimeError(
-                                (f"loaded signal has a size {signal.shape[1]} that is less than context_size: {context_size}"
-                                 f" when signal start time ({sample['start']}) is not 0 and end time ({sample['end']})"
-                                 f" is not {segments[segment_keys[-1]]['end']}"
-                                 )
+                            err_msg = (
+                                f"loaded signal (from {files[file_idx]}) has a size {signal.shape[1]} that is less than"
+                                f" context_size: {context_size} when signal start time ({sample['start']}) is not 0 and"
+                                f" end time ({sample['end']}) is not {segments[segment_keys[-1]]['end']}"
                             )
+                            if self.ignore_sample_error:
+                                LOGGER.warning(err_msg)
+                                continue
+                            else:
+                                raise RuntimeError(err_msg)
                     
                     if signal.shape[0] > 1:
                         signal = signal.mean(dim=0, keepdim=True)

@@ -22,12 +22,13 @@ CONFIG_PATH = "config/config.yaml"
 def make_dataset(
         data_dir: str, 
         annotations: Dict[str, Any],
-        config: Dict[str, Any]
+        config: Dict[str, Any],
+        ignore_sample_error: bool
     ) -> Union[AudioTrainDataset, ShufflerIterDataPipe]:
 
     shuffle              = config["train_config"]["shuffle_samples"]
     shuffler_buffer_size = config["train_config"]["shuffler_buffer_size"]
-    dataset              = AudioTrainDataset(data_dir, annotations, config)
+    dataset              = AudioTrainDataset(data_dir, annotations, config, ignore_sample_error=ignore_sample_error)
     if shuffle:
         dataset = ShufflerIterDataPipe(dataset, buffer_size=shuffler_buffer_size)
     return dataset
@@ -102,8 +103,8 @@ def run(args: argparse.Namespace, config: Dict[str, Any]):
     device_or_rank = config["train_config"]["device"] if torch.cuda.is_available() else "cpu"
     annotations    = load_json(os.path.join(data_dir, "annotations", "annotation.json"))
     annotations    = annotations["annotations"][args.annotator]
-    train_dataset  = make_dataset(train_path, annotations, config)
-    eval_dataset   = make_dataset(eval_path, annotations, config)
+    train_dataset  = make_dataset(train_path, annotations, config, args.ignore_sample_error)
+    eval_dataset   = make_dataset(eval_path, annotations, config, args.ignore_sample_error)
     train_sampler  = None
     eval_sampler   = None
 
@@ -159,7 +160,7 @@ def run(args: argparse.Namespace, config: Dict[str, Any]):
 
     num_classes  = class_weights.shape[0]
     model        = make_model(num_classes, sample_rate, config)
-    loss_fn      = nn.CrossEntropyLoss()
+    loss_fn      = nn.CrossEntropyLoss(weight=class_weights.to(device_or_rank))
     optimizer    = make_optimizer(model, config)
     lr_scheduler = make_lr_scheduler(optimizer, config) if args.lr_schedule else None
     pipeline     = TrainAudioSegPipeline(
@@ -218,6 +219,7 @@ if __name__ == "__main__":
     parser.add_argument("--eval_interval", type=int, default=1, metavar="", help="Number of training steps before each evaluation")
     parser.add_argument("--no_verbose", action="store_true", help="Reduce training output verbosity")
     parser.add_argument("--lr_schedule", action="store_true", help="Use learning rate scheduler")
+    parser.add_argument("--ignore_sample_error", action="store_true", help="This ignores errors caused by faulty annotations and logs a warning instead. PS: If you get a lot of warnings in a single epoch, you really need to check your annotations")
     parser.add_argument("--use_ddp", action="store_true", help="Use DDP (Distributed Data Parallelization)")
     parser.add_argument("--lr_schedule_interval", type=int, default=1, metavar="", help="Number of training steps before lr scheduling")
 
