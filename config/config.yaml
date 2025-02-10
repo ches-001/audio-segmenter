@@ -19,12 +19,11 @@ mfcc_config:
 sample_duration_ms: 10
 n_temporal_context: 6
 new_sample_rate: 16000
-taper_input: false
+taper_input: true
 taper_window: hann
 audio_extension: wav
 
 train_config:
-  class_map_path: "idx2class_mapping"
   device: cuda
 
   optimizer_config:
