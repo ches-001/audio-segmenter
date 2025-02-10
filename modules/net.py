@@ -95,7 +95,7 @@ class AudioSegmentationNet(nn.Module):
         self.taper_window = torch.zeros_like(taper_window)
 
     def xavier_init_weights(self, m: nn.Module):
-        if isinstance(m, nn.Conv2d):
+        if isinstance(m, nn.Linear):
             nn.init.xavier_uniform_(m.weight)
             if torch.is_tensor(m.bias):
                 m.bias.data.fill_(0.01)
