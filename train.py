@@ -26,11 +26,9 @@ def make_dataset(
         ignore_sample_error: bool
     ) -> Union[AudioTrainDataset, ShufflerIterDataPipe]:
 
-    shuffle              = config["train_config"]["shuffle_samples"]
     shuffler_buffer_size = config["train_config"]["shuffler_buffer_size"]
     dataset              = AudioTrainDataset(data_dir, annotations, config, ignore_sample_error=ignore_sample_error)
-    if shuffle:
-        dataset = ShufflerIterDataPipe(dataset, buffer_size=shuffler_buffer_size)
+    dataset              = ShufflerIterDataPipe(dataset, buffer_size=shuffler_buffer_size)
     return dataset
 
 

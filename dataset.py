@@ -44,6 +44,7 @@ class AudioTrainDataset(IterableDataset):
 
     
     def __iter__(self) -> Generator[Tuple[torch.Tensor, torch.Tensor, torch.Tensor], Any, None]:
+        random.shuffle(self.files)
         worker_info = get_worker_info()
 
         if not worker_info:
