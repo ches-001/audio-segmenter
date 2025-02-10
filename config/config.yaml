@@ -3,7 +3,7 @@ network_config:
     l1: 256
     l2: 128
     l3: 64
-  dropout: 0.1
+  dropout: 0.0
 
 mfcc_config:
   melkwargs:
@@ -32,7 +32,7 @@ train_config:
     eps: 1.0e-08
     lr: 0.001
     name: Adam
-    weight_decay: 0.002
+    weight_decay: 0.0
 
   lr_scheduler_config:
     T_0: 200
