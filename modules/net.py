@@ -7,6 +7,7 @@ from typing import *
 
 
 class AudioSegmentationNet(nn.Module):
+    # PAPER: https://aclanthology.org/2016.iwslt-1.4/
     def __init__(
             self, 
             num_classes: int,
@@ -29,14 +30,9 @@ class AudioSegmentationNet(nn.Module):
         )
 
         hop_length = n_fft = int(self.config["new_sample_rate"] * (self.config["sample_duration_ms"] / 1000))
-        self.config["melspectrogram_config"].update({"hop_length": hop_length, "n_fft": n_fft})
         self.config["mfcc_config"]["melkwargs"].update({"hop_length": hop_length, "n_fft": n_fft})
 
         self.power_to_db_tfmr = torchaudio.transforms.AmplitudeToDB(top_db=80)
-        self.melspectogram_tfmr = torchaudio.transforms.MelSpectrogram(
-            sample_rate=self.config["new_sample_rate"], 
-            **self.config["melspectrogram_config"]
-        )
         self.mfcc_tfmr = torchaudio.transforms.MFCC(
             sample_rate=self.config["new_sample_rate"], 
             **self.config["mfcc_config"]
@@ -44,7 +40,7 @@ class AudioSegmentationNet(nn.Module):
         self.register_buffer("taper_window", torch.empty(0), persistent=True)        
 
         network_config = self.config["network_config"]
-        in_features = (4 * self.config["melspectrogram_config"]["n_mels"]) + 2
+        in_features = (3 * self.config["mfcc_config"]["melkwargs"]["n_mels"]) + 3
         self.fc = nn.Sequential(
             nn.Linear(in_features, network_config["hidden_layers_config"]["l1"]),
             nn.Linear(network_config["hidden_layers_config"]["l1"], network_config["hidden_layers_config"]["l2"]),
@@ -73,22 +69,16 @@ class AudioSegmentationNet(nn.Module):
             
         context_size = (2 * self.config["n_temporal_context"]) + 1
         # ZCR size:               (N, Cf+1)
-        # ZCR features size:      (N, 2)
-        # mel_spectrogram size:   (N, 1, n_mel, Cf+1)
+        # ZCR features size:      (N, 3)
         # mfcc size:              (N, 1, n_mel, Cf+1)
-        # spectral size:          (N, 2, n_mel, Cf+1)
-        # spectral_features size: (N, 4*n_mel)
-        # features size:          (N, (4*n_mel) + 2) (if n_mel = 20, then size is (N, 82))
+        # spectral_features size: (N, 3*n_mel)
+        # features size:          (N, (3*n_mel) + 3) (if n_mel = 20, then size is (N, 63))
         zcr                = AudioSegmentationNet.compute_ZCR(x, context_size=context_size).squeeze(dim=1)
-        zcr_features       = torch.stack([zcr.mean(dim=1), zcr.std(dim=1)], dim=-1)
-        mel_spectrogram    = self.melspectogram_tfmr(x)
-        mel_spectrogram    = self.power_to_db_tfmr(mel_spectrogram)
-        mel_spectrogram    = AudioSegmentationNet.scale_input(mel_spectrogram)
+        zcr_features       = torch.stack([zcr.mean(dim=1), zcr.std(dim=1), zcr.std(dim=1).pow(2)], dim=-1)
         mfcc               = self.mfcc_tfmr(x)
         mfcc               = self.power_to_db_tfmr(mfcc)
         mfcc               = AudioSegmentationNet.scale_input(mfcc)
-        spectral           = torch.cat((mel_spectrogram, mfcc), dim=1)
-        spectral_features  = torch.stack([spectral.mean(dim=3), spectral.std(dim=3)], dim=-1)
+        spectral_features  = torch.stack([mfcc.mean(dim=3), mfcc.std(dim=3), mfcc.std(dim=3).pow(2)], dim=-1)
         spectral_features  = spectral_features.reshape(spectral_features.shape[0], -1).contiguous()
         features           = torch.cat([spectral_features, zcr_features], dim=1)
         logits             = self.fc(features)
@@ -105,12 +95,12 @@ class AudioSegmentationNet(nn.Module):
 
     @staticmethod
     def scale_input(x: torch.Tensor, e: float=1e-5) -> torch.Tensor:
-        # _max = x.max(dim=-1).values.max(dim=-1).values.max(dim=-1).values[:, None, None, None]
-        # _min = x.min(dim=-1).values.min(dim=-1).values.min(dim=-1).values[:, None, None, None]
-        # return (x - _min) / ((_max - _min) + e)
-        mu  = x.mean(dim=(-2, -1))[:, :, None, None]
-        std = x.std(dim=(-2, -1))[:, :, None, None]
-        return (x - mu) / (std + e)
+        _max = x.max(dim=-1).values.max(dim=-1).values.max(dim=-1).values[:, None, None, None]
+        _min = x.min(dim=-1).values.min(dim=-1).values.min(dim=-1).values[:, None, None, None]
+        return (x - _min) / ((_max - _min) + e)
+        # mu  = x.mean(dim=(-2, -1))[:, :, None, None]
+        # std = x.std(dim=(-2, -1))[:, :, None, None]
+        # return (x - mu) / (std + e)
     
     @staticmethod
     def compute_ZCR(x: torch.Tensor, context_size: int) -> torch.Tensor:
