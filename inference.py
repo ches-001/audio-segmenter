@@ -27,25 +27,30 @@ def smoothen_labels(labels: torch.Tensor, mode_context: int=20, min_cs_window: i
                 labels[i] = labels[i-1]
 
 
-def running_length_encoding(timeframes: torch.Tensor, labels: torch.Tensor) -> Dict[str, Any]:
-    final_pred = {}
+def running_length_encoding(
+        timeframes: torch.Tensor, 
+        labels: torch.Tensor, 
+        idx2class: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+    final_pred = []
     for i in range(0, labels.shape[0]):
+        class_ = idx2class[int(labels[i].item())]
         if i == 0:
-            final_pred[i] = {
+            final_pred.append({
                 "start": timeframes[i][0].item(), 
                 "end": timeframes[i][1].item(), 
-                "class": labels[i].item()
-            }
+                "class": class_
+            })
             continue
 
-        if labels[i].item() == final_pred[i-1]["class"]:
-            final_pred[i-1]["end"] = timeframes[i][1].item()
+        if class_ == final_pred[-1]["class"]:
+            final_pred[-1]["end"] = timeframes[i][1].item()
         else:
-            final_pred[i] = {
+            final_pred.append({
                 "start": timeframes[i][0].item(), 
                 "end": timeframes[i][1].item(), 
-                "class": labels[i].item()
-            }
+                "class": class_
+            })
     return final_pred
         
 
@@ -80,7 +85,7 @@ def run(args: argparse.Namespace):
     timeframes = torch.concat(timeframes, dim=0)
 
     smoothen_labels(labels, args.mode_context, args.min_cs_window)
-    final_labels = running_length_encoding(timeframes, labels)
+    final_labels = running_length_encoding(timeframes, labels, idx2class)
     save_json(final_labels, os.path.join(output_dir, ".".join(filename.split(".")[:-1])) + ".json")
 
 

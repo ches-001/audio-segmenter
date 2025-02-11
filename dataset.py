@@ -129,20 +129,22 @@ class AudioTrainDataset(IterableDataset):
 
 
     def split_segments(self, current_segment: Dict[str, Any]) -> Generator[Dict[str, Any], Any, None]:
-        start     = int(current_segment["start"] * self.sample_rate)
-        end       = int(current_segment["end"] * self.sample_rate)
-        class_    = current_segment["class"]
-        increment = int((self.sample_duration_ms / 1000) * self.sample_rate)
-        offset    = self.n_temporal_context * increment
+        start        = int(current_segment["start"] * self.sample_rate)
+        end          = int(current_segment["end"] * self.sample_rate)
+        class_       = current_segment["class"]
+        segment_size = int((self.sample_duration_ms / 1000) * self.sample_rate)
+        offset       = self.n_temporal_context * segment_size
+        rem          = end % segment_size
+        terminal_val = end + ((segment_size - rem) if rem > 0 else 0)
         
         i = start
-        while i <= (end - increment):
+        while i < terminal_val:
             yield {
                 "start": i - offset, 
-                "end": i + offset + increment,
+                "end": i + offset + segment_size,
                 "class": class_
             }
-            i += increment
+            i += segment_size
 
 
     def get_class_weights(self, device: Optional[Union[str, int]]=None) -> torch.Tensor:
@@ -189,8 +191,10 @@ class AudioInferenceDataset(IterableDataset):
         offset              = self.n_temporal_context * segment_size
         context_size        = (offset * 2) + segment_size
         start               = 0
+        rem                 = self.audio_metadata.num_frames % segment_size
+        terminal_val        = self.audio_metadata.num_frames + ((segment_size - rem) if rem > 0 else 0)
 
-        while start < self.audio_metadata.num_frames:
+        while start < terminal_val:
             adj_start = max(0, start - offset)
             adj_end   = min(self.audio_metadata.num_frames, start + offset + segment_size)
 
