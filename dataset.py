@@ -71,6 +71,7 @@ class AudioTrainDataset(IterableDataset):
             segments     = self.annotations[self.files[file_idx]]
             segment_keys = list(segments.keys())
             exit_file    = False
+            meta_info    = torchaudio.info(os.path.join(self.data_dir, files[file_idx] + f".{self.ext}"))
 
             while segment_idx < len(segments):
                 exit_segment = False
@@ -78,31 +79,34 @@ class AudioTrainDataset(IterableDataset):
                 for sample in self.split_segments(segments[str(segment_idx)]):
                     if exit_segment:
                         break
-
+                    sample["start"] = max(0, sample["start"])
+                    sample["end"]   = min(meta_info.num_frames, sample["end"])
                     signal, _ = torchaudio.load(
                         os.path.join(self.data_dir, files[file_idx] + f".{self.ext}"),
-                        frame_offset=math.floor(sample["start"] * self.sample_rate),
-                        num_frames=math.ceil((sample["end"] - sample["start"]) * self.sample_rate),
+                        frame_offset=sample["start"],
+                        num_frames=sample["end"] - sample["start"],
                         backend="soundfile"
                     )
-                    class_ = torch.tensor([self.class2idx[sample["class"]]], dtype=torch.int64)
-                    timeframe = torch.tensor([sample["start"], sample["end"]], dtype=torch.float32)
-
-                    context_size = ((self.n_temporal_context * 2) + 1) * self.sample_duration_ms / 1000 * self.sample_rate
-                    context_size = math.ceil(context_size)
+                    class_       = torch.tensor([self.class2idx[sample["class"]]], dtype=torch.int64)
+                    timeframe    = torch.tensor([sample["start"], sample["end"]], dtype=torch.float32) / self.sample_rate
+                    ndigits      = 4
+                    timeframe    = torch.round(timeframe * 10**ndigits) / 10**ndigits # round to (ndigits=4) decimal places
+                    segment_size = int(self.sample_duration_ms / 1000 * self.sample_rate)
+                    offset       = self.n_temporal_context * segment_size
+                    context_size = (offset * 2) + segment_size
                     
                     if signal.shape[1] < context_size:
                         zero_pad = torch.zeros((signal.shape[0], context_size - signal.shape[1], ), dtype=signal.dtype)
                         if sample["start"] == 0:
                             signal = torch.cat([zero_pad, signal], dim=1)
-                        elif sample["end"] > segments[segment_keys[-1]]["end"]:
+                        elif sample["end"] == meta_info.num_frames:
                             signal = torch.cat([signal, zero_pad], dim=1)
                         else:
                             # This should not occur
                             err_msg = (
                                 f"loaded signal (from {files[file_idx]}) has a size {signal.shape[1]} that is less than"
-                                f" context_size: {context_size} when signal start time ({sample['start']}) is not 0 and"
-                                f" end time ({sample['end']}) is not {segments[segment_keys[-1]]['end']}"
+                                f" context_size: {context_size} when signal start time ({timeframe[0].item()}) is not 0 and"
+                                f" end time ({timeframe[1].item()}) is not {segments[segment_keys[-1]]['end']}"
                             )
                             if self.ignore_sample_error:
                                 LOGGER.warning(err_msg)
@@ -124,22 +128,21 @@ class AudioTrainDataset(IterableDataset):
             file_idx += 1
 
 
-    def split_segments(self,current_segment: Dict[str, Any]) -> Generator[Dict[str, Any], Any, None]:
-        start     = current_segment["start"]
-        end       = current_segment["end"]
+    def split_segments(self, current_segment: Dict[str, Any]) -> Generator[Dict[str, Any], Any, None]:
+        start     = int(current_segment["start"] * self.sample_rate)
+        end       = int(current_segment["end"] * self.sample_rate)
         class_    = current_segment["class"]
-        increment = self.sample_duration_ms / 1000
+        increment = int((self.sample_duration_ms / 1000) * self.sample_rate)
         offset    = self.n_temporal_context * increment
         
         i = start
-        while i < (end - increment):
+        while i <= (end - increment):
             yield {
-                "start": round(max(0, i - offset), 4), 
-                "end": round(i + offset + increment, 4),
+                "start": i - offset, 
+                "end": i + offset + increment,
                 "class": class_
             }
             i += increment
-            i = round(i, 4)
 
 
     def get_class_weights(self, device: Optional[Union[str, int]]=None) -> torch.Tensor:
@@ -149,6 +152,7 @@ class AudioTrainDataset(IterableDataset):
         label_weights = label_weights.sum() / (label_weights.shape[0] * label_weights)
         return label_weights
     
+
     def _set_classes_details(self):
         self.classes = set()
         self.class_counts = {}
@@ -181,22 +185,19 @@ class AudioInferenceDataset(IterableDataset):
 
     
     def __iter__(self) -> Generator[Tuple[torch.Tensor, torch.Tensor], Any, None]:
-        audio_duration      = self.audio_metadata.num_frames / self.audio_metadata.sample_rate
-        segment_duration    = self.sample_duration_ms / 1000
-        offset_duration     = self.n_temporal_context * segment_duration
-        context_duration    = (offset_duration * 2) + segment_duration
-        context_size        = math.ceil(context_duration * self.audio_metadata.sample_rate)
+        segment_size        = int((self.sample_duration_ms / 1000) * self.audio_metadata.sample_rate)
+        offset              = self.n_temporal_context * segment_size
+        context_size        = (offset * 2) + segment_size
         start               = 0
-        increment           = self.sample_duration_ms / 1000
 
-        while start < (audio_duration - increment):
-            adj_start = round(max(0, start - offset_duration), 4)
-            adj_end   = round(start + offset_duration + segment_duration, 4)
+        while start < self.audio_metadata.num_frames:
+            adj_start = max(0, start - offset)
+            adj_end   = min(self.audio_metadata.num_frames, start + offset + segment_size)
 
             signal, _ = torchaudio.load(
                 self.file_path, 
-                frame_offset=math.floor(adj_start * self.audio_metadata.sample_rate), 
-                num_frames=math.ceil((adj_end - adj_start) * self.audio_metadata.sample_rate), 
+                frame_offset=adj_start,
+                num_frames=adj_end - adj_start, 
                 backend="soundfile"
             )
             
@@ -205,7 +206,7 @@ class AudioInferenceDataset(IterableDataset):
                     zero_pad = torch.zeros((1, context_size - signal.shape[1]))
                     signal   = torch.cat([zero_pad, signal], dim=1)
 
-                elif adj_end > audio_duration:
+                elif adj_end == self.audio_metadata.num_frames:
                     zero_pad = torch.zeros((1, context_size - signal.shape[1]))
                     signal   = torch.cat([signal, zero_pad], dim=1)
 
@@ -213,8 +214,10 @@ class AudioInferenceDataset(IterableDataset):
                     # This should not happen
                     raise RuntimeError(f"signal shape ({signal.shape[1]}) does not match context_size ({context_size})")
 
-            timeframe = torch.tensor([start, min(start + (self.sample_duration_ms / 1000), audio_duration)], dtype=torch.float32)
+            timeframe = torch.tensor([start, min(start + segment_size, self.audio_metadata.num_frames)], dtype=torch.float32)
+            timeframe /= self.audio_metadata.sample_rate
+            ndigits   = 4
+            timeframe = torch.round(timeframe * 10**ndigits) / 10**ndigits
             yield signal, timeframe
 
-            start += increment
-            start = round(start, 4)
+            start += segment_size
