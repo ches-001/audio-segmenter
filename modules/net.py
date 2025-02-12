@@ -85,6 +85,7 @@ class AudioSegmentationNet(nn.Module):
         zcr_features       = torch.stack([zcr.mean(dim=1), zcr.std(dim=1), zcr.std(dim=1).pow(2)], dim=-1)
         mfcc               = self.mfcc_tfmr(x)
         mfcc               = self.power_to_db_tfmr(mfcc)
+        mfcc               = self.scale_input(mfcc)
         spectral_features  = torch.stack([mfcc.mean(dim=3), mfcc.std(dim=3), mfcc.std(dim=3).pow(2)], dim=-1)
         spectral_features  = spectral_features.reshape(spectral_features.shape[0], -1).contiguous()
         features           = torch.cat([spectral_features, zcr_features], dim=1)
@@ -99,6 +100,11 @@ class AudioSegmentationNet(nn.Module):
             nn.init.xavier_uniform_(m.weight)
             if torch.is_tensor(m.bias):
                 m.bias.data.fill_(0.01)
+
+    def scale_input(self, x: torch.Tensor, e: float=1e-7) -> torch.Tensor:
+        _max = x.max(dim=-1).values.max(dim=-1).values.max(dim=-1).values[:, None, None, None]
+        _min = x.min(dim=-1).values.min(dim=-1).values.min(dim=-1).values[:, None, None, None]
+        return (x - _min) / ((_max - _min) + e)
 
     @staticmethod
     def compute_ZCR(x: torch.Tensor, context_size: int) -> torch.Tensor:
