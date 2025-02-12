@@ -42,17 +42,14 @@ class AudioSegmentationNet(nn.Module):
         in_features = (3 * self.config["mfcc_config"]["melkwargs"]["n_mels"]) + 3
         self.fc = nn.Sequential(
             nn.Linear(in_features, network_config["hidden_layers_config"]["l1"]),
-            nn.BatchNorm1d(network_config["hidden_layers_config"]["l1"]),
-            nn.ReLU(),
+            nn.Sigmoid(),
 
             nn.Linear(network_config["hidden_layers_config"]["l1"], network_config["hidden_layers_config"]["l2"]),
-            nn.BatchNorm1d(network_config["hidden_layers_config"]["l2"]),
-            nn.ReLU(),
+            nn.Sigmoid(),
             nn.Dropout(network_config["dropout"]),
 
             nn.Linear(network_config["hidden_layers_config"]["l2"], network_config["hidden_layers_config"]["l3"]),
-            nn.BatchNorm1d(network_config["hidden_layers_config"]["l3"]),
-            nn.ReLU(),
+            nn.Sigmoid(),
             nn.Dropout(network_config["dropout"]),
 
             nn.Linear(network_config["hidden_layers_config"]["l3"], self.num_classes),
@@ -87,8 +84,8 @@ class AudioSegmentationNet(nn.Module):
         mfcc               = self.power_to_db_tfmr(mfcc)
         mfcc               = self.scale_input(mfcc)
         spectral_features  = torch.stack([mfcc.mean(dim=3), mfcc.std(dim=3), mfcc.std(dim=3).pow(2)], dim=-1)
-        spectral_features  = spectral_features.reshape(spectral_features.shape[0], -1).contiguous()
-        features           = torch.cat([spectral_features, zcr_features], dim=1)
+        spectral_features  = spectral_features.reshape(spectral_features.shape[0], -1)
+        features           = torch.cat([spectral_features, zcr_features], dim=1).contiguous()
         logits             = self.fc(features)
         return logits
 
