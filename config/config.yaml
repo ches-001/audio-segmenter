@@ -1,8 +1,8 @@
 network_config:
   hidden_layers_config:
-    l1: 30
-    l2: 20
-    l3: 10
+    l1: 512
+    l2: 512
+    l3: 512
   dropout: 0.0
 
 mfcc_config:
