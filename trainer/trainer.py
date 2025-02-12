@@ -172,7 +172,7 @@ class TrainAudioSegPipeline:
             position   = abs(position - (world_size - 1))
             pbar = tqdm.tqdm(enumerate(dataloader), position=position)
         else:
-            pbar  = tqdm.tqdm(enumerate(dataloader))
+            pbar = tqdm.tqdm(enumerate(dataloader))
 
         for count, (signals, classes, _) in pbar:
             signals: torch.Tensor     = signals.to(self.device_or_rank)
