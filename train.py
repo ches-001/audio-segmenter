@@ -231,7 +231,7 @@ if __name__ == "__main__":
     random.seed(SEED)
     torch.manual_seed(SEED)
     if torch.backends.cudnn.enabled:
-        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.benchmark     = False
         torch.backends.cudnn.deterministic = True
 
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
