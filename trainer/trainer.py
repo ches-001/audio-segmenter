@@ -185,10 +185,9 @@ class TrainAudioSegPipeline:
                 batch_loss.backward()
                 self.optimizer.step()
 
-            batch_metrics = {}
-            targets = classes.cpu().numpy()
-            pred = pred_logits.argmax(dim=-1).detach().cpu().numpy()
-            
+            batch_metrics              = {}
+            targets                    = classes.cpu().numpy()
+            pred                       = pred_logits.argmax(dim=-1).detach().cpu().numpy()
             batch_metrics["loss"]      = batch_loss.item()
             batch_metrics["accuracy"]  = accuracy_score(targets, pred)
             batch_metrics["precision"] = precision_score(targets, pred)
