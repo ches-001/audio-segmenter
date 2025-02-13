@@ -36,7 +36,7 @@ train_config:
   lr_scheduler_config:
     T_0: 200
     T_mult: 1
-    eta_min: 1.0e-06
+    eta_min: 1.0e-05
     name: CosineAnnealingWarmRestarts
 
   verbose: true
