@@ -235,7 +235,7 @@ if __name__ == "__main__":
     parser.add_argument("--ext", type=str, default="wav", metavar="", help="Training data extension (eg: wav, mp3...)")
     parser.add_argument("--batch_size", type=int, default=128, metavar="", help="Training batch size")
     parser.add_argument("--epochs", type=int, default=200, metavar="", help="Number of training epochs")
-    parser.add_argument("--max_train_steps", type=int, default=400, metavar="", help="Maximum number of training steps (if set to -1 it goes all the way through the training set)")
+    parser.add_argument("--max_train_steps", type=int, default=500, metavar="", help="Maximum number of training steps (if set to -1 it goes all the way through the training set)")
     parser.add_argument("--checkpoint_interval", type=int, default=10, metavar="", help="Number of epochs before persisting checkpoint to disk")
     parser.add_argument("--eval_interval", type=int, default=5, metavar="", help="Number of training steps before each evaluation")
     parser.add_argument("--no_verbose", action="store_true", help="Reduce training output verbosity")
