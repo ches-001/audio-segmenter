@@ -79,7 +79,9 @@ class AudioIterableTrainDataset(IterableDataset):
             segment_idx  = 0
             segments     = self.annotations[self.files[file_idx]]
             exit_file    = False
-            meta_info    = torchaudio.info(os.path.join(self.data_dir, files[file_idx] + f".{self.ext}"))
+            meta_info    = torchaudio.info(
+                os.path.join(self.data_dir, files[file_idx] + f".{self.ext}"), backend="soundfile"
+            )
 
             while segment_idx < len(segments):
                 exit_segment = False
@@ -92,7 +94,9 @@ class AudioIterableTrainDataset(IterableDataset):
                     class_          = segments[str(segment_idx)]["class"]
 
                     if self.only_labels:
-                        sample = {"file": files[file_idx], **sample, "class": class_}
+                        sample = {
+                            "file": files[file_idx], **sample, "class": class_, "total_file_frames": meta_info.num_frames
+                        }
                         yield sample
 
                     else:
@@ -224,10 +228,9 @@ class AudioDataset(Dataset):
         return self.annotations.shape[0]
     
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        file, start, end, class_ = self.annotations.iloc[idx, :]
+        file, start, end, class_, total_file_frames = self.annotations.iloc[idx, :]
 
         path         = os.path.join(self.data_dir, f"{file}.{self.ext}")
-        meta_info    = torchaudio.info(path)
         signal, _    = torchaudio.load(path, frame_offset=start, num_frames=end-start, backend="soundfile")
         class_       = torch.tensor([self.class2idx[class_]], dtype=torch.int64)
         timeframe    = torch.tensor([start, end], dtype=torch.float32) / self.sample_rate
@@ -241,14 +244,14 @@ class AudioDataset(Dataset):
             zero_pad = torch.zeros((signal.shape[0], context_size - signal.shape[1], ), dtype=signal.dtype)
             if start == 0:
                 signal = torch.cat([zero_pad, signal], dim=1)
-            elif end == meta_info.num_frames:
+            elif end == total_file_frames:
                 signal = torch.cat([signal, zero_pad], dim=1)
             else:
                 # This should not occur
                 err_msg = (
                     f"loaded signal (from {file}) has a size {signal.shape[1]} that is less than"
                     f" context_size: {context_size} when signal start time ({timeframe[0].item()}) is not 0 and"
-                    f" end time ({timeframe[1].item()}) is not {meta_info.num_frames / self.sample_rate}"
+                    f" end time ({timeframe[1].item()}) is not {total_file_frames / self.sample_rate}"
                 )
                 if self.ignore_sample_error:
                     LOGGER.warning(err_msg)

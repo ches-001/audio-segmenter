@@ -40,5 +40,4 @@ train_config:
     name: CosineAnnealingWarmRestarts
 
   verbose: true
-  shuffler_buffer_size: 50_000
   num_workers: 4

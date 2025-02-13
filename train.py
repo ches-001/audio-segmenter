@@ -256,6 +256,6 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
     
-    # For single GPU / CPU training:: train.py --data_dir=<data/directory> --use_ddp --lr_schedule --batch_size=32
-    # For multiple GPU training:: torchrun --standalone --nproc_per_node=gpu train.py --use_ddp --lr_schedule --batch_size=32
+    # For single GPU / CPU training:: train.py --data_dir=<data/directory> --use_ddp --lr_schedule --batch_size=256 --ignore_sample_error
+    # For multiple GPU training:: torchrun --standalone --nproc_per_node=gpu train.py --use_ddp --lr_schedule --batch_size=256 --ignore_sample_error
     run(args, config)
