@@ -48,19 +48,7 @@ class AudioSegmentationNet(nn.Module):
             nn.SiLU(),
             nn.Dropout(network_config["dropout"]),
 
-            nn.Linear(network_config["hidden_layers_config"]["l2"], network_config["hidden_layers_config"]["l3"]),
-            nn.SiLU(),
-            nn.Dropout(network_config["dropout"]),
-
-            nn.Linear(network_config["hidden_layers_config"]["l3"], network_config["hidden_layers_config"]["l4"]),
-            nn.SiLU(),
-            nn.Dropout(network_config["dropout"]),
-
-            nn.Linear(network_config["hidden_layers_config"]["l4"], network_config["hidden_layers_config"]["l5"]),
-            nn.SiLU(),
-            nn.Dropout(network_config["dropout"]),
-
-            nn.Linear(network_config["hidden_layers_config"]["l5"], self.num_classes),
+            nn.Linear(network_config["hidden_layers_config"]["l2"], self.num_classes),
         )
         self.apply(self.xavier_init_weights)
 
