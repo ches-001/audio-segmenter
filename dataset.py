@@ -44,7 +44,7 @@ class AudioIterableTrainDataset(IterableDataset):
         temp_file                 = os.path.join(
             self.data_dir, self.files[random.randint(0, len(self.files)-1)] + f".{self.ext}"
         )
-        audio_metadata            = torchaudio.info(temp_file)
+        audio_metadata            = torchaudio.info(temp_file, backend="soundfile")
         self.sample_rate          = audio_metadata.sample_rate
         self.ignore_sample_error = ignore_sample_error
 
@@ -219,7 +219,7 @@ class AudioDataset(Dataset):
         temp_file                = os.path.join(
             self.data_dir, self.annotations["file"].iloc[random.randint(0, self.annotations.shape[0]-1)] + f".{self.ext}"
         )
-        audio_metadata           = torchaudio.info(temp_file)
+        audio_metadata           = torchaudio.info(temp_file, backend="soundfile")
         self.sample_rate         = audio_metadata.sample_rate
 
         self._set_classes_details()
@@ -291,7 +291,7 @@ class AudioInferenceDataset(IterableDataset):
             raise ValueError(f"config is expected to be str or dict type got {type(config)}")
         
         self.file_path          = file_path
-        self.audio_metadata     = torchaudio.info(self.file_path)
+        self.audio_metadata     = torchaudio.info(self.file_path, backend="soundfile")
         self.sample_duration_ms = config["sample_duration_ms"]
         self.n_temporal_context = config["n_temporal_context"]
 
