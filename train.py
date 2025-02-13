@@ -2,15 +2,16 @@ import warnings
 warnings.filterwarnings(action="ignore")
 import os
 import sys
+import tqdm
 import argparse
 import logging
 import random
 import torch
 import torch.nn as nn
 import numpy as np
+import pandas as pd
 from torch.utils.data import DataLoader, Sampler, DistributedSampler
-from torch.utils.data.datapipes.iter.combinatorics import ShufflerIterDataPipe
-from dataset import AudioTrainDataset
+from dataset import AudioIterableTrainDataset, AudioDataset
 from modules.net import AudioSegmentationNet
 from trainer.trainer import TrainAudioSegPipeline
 from utils import load_yaml, load_json, save_json, ddp_setup, ddp_destroy, ddp_broadcast
@@ -19,21 +20,38 @@ from typing import *
 LOGGER      = logging.getLogger(__name__)
 CONFIG_PATH = "config/config.yaml"
 
+
+def generate_annotations(data_dir: str, annotator: str) -> List[pd.DataFrame]:
+    train_path  = os.path.join(data_dir, "train")
+    eval_path   = os.path.join(data_dir, "eval")
+    config      = load_yaml(CONFIG_PATH)
+    annotations = load_json(os.path.join(data_dir, "annotations", "annotation.json"))
+    annotations = annotations["annotations"][annotator]
+    dfs         = []
+    for path, name in zip([train_path, eval_path], ["train", "eval"]):
+        dataset     = AudioIterableTrainDataset(path, annotations, config, ignore_sample_error=True, only_labels=True)
+        df = pd.DataFrame([sample for sample in tqdm.tqdm(dataset)])
+        df.to_csv(os.path.join(data_dir, "annotations", f"{name}_annotation.csv"), index=False)
+        dfs.append(df)
+    return dfs
+
+
 def make_dataset(
         data_dir: str, 
-        annotations: Dict[str, Any],
+        csv_annotations: Dict[str, Any],
         config: Dict[str, Any],
-        ignore_sample_error: bool
-    ) -> Union[AudioTrainDataset, ShufflerIterDataPipe]:
+        ignore_sample_error: bool,
+        ext: str="wav",
+    ) -> AudioDataset:
 
-    shuffler_buffer_size = config["train_config"]["shuffler_buffer_size"]
-    dataset              = AudioTrainDataset(data_dir, annotations, config, ignore_sample_error=ignore_sample_error)
-    dataset              = ShufflerIterDataPipe(dataset, buffer_size=shuffler_buffer_size)
+    dataset = AudioDataset(
+        data_dir, csv_annotations, config, ext=ext, ignore_sample_error=ignore_sample_error
+    )
     return dataset
 
 
 def make_dataloader(
-        dataset: Union[AudioTrainDataset, ShufflerIterDataPipe], 
+        dataset: AudioDataset, 
         batch_size: int, 
         sampler: Optional[Sampler]=None, 
         **kwargs
@@ -44,7 +62,9 @@ def make_dataloader(
     if "num_workers" not in kwargs:
         kwargs["num_workers"] = os.cpu_count()
 
-    dataloader = DataLoader(dataset, sampler=sampler, shuffle=None, **kwargs)
+    dataloader = DataLoader(
+        dataset, sampler=sampler, shuffle=(True if sampler is None else None), **kwargs
+    )
     return dataloader
 
 
@@ -95,16 +115,23 @@ def run(args: argparse.Namespace, config: Dict[str, Any]):
         # setup DDP process group
         ddp_setup()
         
-    data_dir       = args.data_dir
-    train_path     = os.path.join(data_dir, "train")
-    eval_path      = os.path.join(data_dir, "eval")
-    device_or_rank = config["train_config"]["device"] if torch.cuda.is_available() else "cpu"
-    annotations    = load_json(os.path.join(data_dir, "annotations", "annotation.json"))
-    annotations    = annotations["annotations"][args.annotator]
-    train_dataset  = make_dataset(train_path, annotations, config, args.ignore_sample_error)
-    eval_dataset   = make_dataset(eval_path, annotations, config, args.ignore_sample_error)
-    train_sampler  = None
-    eval_sampler   = None
+    data_dir              = args.data_dir
+    train_path            = os.path.join(data_dir, "train")
+    eval_path             = os.path.join(data_dir, "eval")
+    device_or_rank        = config["train_config"]["device"] if torch.cuda.is_available() else "cpu"
+    train_annotation_path = os.path.join(data_dir, "annotations", "train_annotation.csv")
+    eval_annotation_path  = os.path.join(data_dir, "annotations", "eval_annotation.csv")
+    
+    if os.path.isfile(train_annotation_path) and os.path.isfile(eval_annotation_path): 
+        train_annotations = pd.read_csv(train_annotation_path)
+        eval_annotations  = pd.read_csv(eval_annotation_path)
+    else:
+        train_annotations, eval_annotations = generate_annotations(data_dir, args.annotator)
+
+    train_dataset = make_dataset(train_path, train_annotations, config, args.ignore_sample_error, ext=args.ext)
+    eval_dataset  = make_dataset(eval_path, eval_annotations, config, args.ignore_sample_error, args.ext)
+    train_sampler = None
+    eval_sampler  = None
 
     if args.use_ddp:
         train_sampler = DistributedSampler(train_dataset)
@@ -135,10 +162,7 @@ def run(args: argparse.Namespace, config: Dict[str, Any]):
     eval_dataloader  = make_dataloader(eval_dataset, args.batch_size, eval_sampler, num_workers=num_workers)
     
     if not args.use_ddp or (args.use_ddp and device_or_rank in [0, "cuda:0"]):
-        if isinstance(train_dataset, AudioTrainDataset):
-            class_weights = train_dataset.get_class_weights(device_or_rank)
-        else:
-            class_weights = train_dataset.datapipe.get_class_weights(device_or_rank)
+        class_weights = train_dataset.get_class_weights(device_or_rank)
         num_classes = torch.tensor(class_weights.shape[0], dtype=torch.int64, device=device_or_rank)
     else:
         num_classes = torch.tensor([0], dtype=torch.int64, device=device_or_rank)
@@ -149,13 +173,8 @@ def run(args: argparse.Namespace, config: Dict[str, Any]):
             class_weights = torch.zeros(num_classes.item(), dtype=torch.int64, device=device_or_rank)
         ddp_broadcast(class_weights, src_rank=0)
 
-    if isinstance(train_dataset,AudioTrainDataset):
-        sample_rate = train_dataset.sample_rate
-        idx2class   = train_dataset.idx2class
-    else:
-        sample_rate = train_dataset.datapipe.sample_rate
-        idx2class   = train_dataset.datapipe.idx2class
-
+    sample_rate  = train_dataset.sample_rate
+    idx2class    = train_dataset.idx2class
     num_classes  = class_weights.shape[0]
     model        = make_model(num_classes, sample_rate, config)
     loss_fn      = nn.CrossEntropyLoss(weight=class_weights.to(device_or_rank))
@@ -211,6 +230,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Detection Network")
     parser.add_argument("--data_dir", type=str, metavar="", required=True, help="Dataset directory")
     parser.add_argument("--annotator", type=str, default="annotator_a", metavar="", help="Annotator label to use")
+    parser.add_argument("--ext", type=str, default="wav", metavar="", help="Training data extension (eg: wav, mp3...)")
     parser.add_argument("--batch_size", type=int, default=128, metavar="", help="Training batch size")
     parser.add_argument("--epochs", type=int, default=200, metavar="", help="Number of training epochs")
     parser.add_argument("--checkpoint_interval", type=int, default=10, metavar="", help="Number of epochs before persisting checkpoint to disk")
