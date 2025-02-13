@@ -1,7 +1,7 @@
 network_config:
   hidden_layers_config:
-    l1: 512
-    l2: 256
+    l1: 1024
+    l2: 512
     l3: 256
     l4: 128
     l5: 64
