@@ -216,6 +216,8 @@ def run(args: argparse.Namespace, config: Dict[str, Any]):
         if (args.checkpoint_interval > 0) and (epoch % args.checkpoint_interval == 0):
             print_logs(f"checkpoint saved at epoch: {best_model_epoch}", 0)
             pipeline.save_checkpoint()
+            
+        print_logs("\n", 0)
 
     pipeline.metrics_to_csv()
     pipeline.save_metrics_plots()
