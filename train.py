@@ -59,7 +59,7 @@ def make_dataloader(
     
     kwargs = dict(batch_size=batch_size, **kwargs)
 
-    if "num_workers" not in kwargs:
+    if "num_workers" not in kwargs or ("num_workers" in kwargs and kwargs["num_workers"] == -1):
         kwargs["num_workers"] = os.cpu_count()
 
     dataloader = DataLoader(
