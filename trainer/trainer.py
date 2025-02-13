@@ -141,18 +141,24 @@ class TrainAudioSegPipeline:
         self._eval_metrics  = saved_states["METRICS"]["EVAL"]
         return saved_states
     
-    def train(self, dataloader: DataLoader, verbose: bool=False) -> Dict[str, float]:
-        r = self.step(dataloader, "train", verbose)
+    def train(self, dataloader: DataLoader, verbose: bool=False, max_steps: Optional[int]=None) -> Dict[str, float]:
+        r = self.step(dataloader, "train", verbose, max_steps=max_steps)
         if self.lr_scheduler and (self.last_epoch % self.lr_schedule_interval == 0):
             self.lr_scheduler.step()
         self.last_epoch += 1
         return r
         
-    def evaluate(self, dataloader: DataLoader, verbose: bool=False) -> Dict[str, float]:        
+    def evaluate(self, dataloader: DataLoader, verbose: bool=False, max_steps: Optional[int]=None) -> Dict[str, float]:        
         with torch.no_grad():
-            return self.step(dataloader, "eval", verbose)
+            return self.step(dataloader, "eval", verbose, max_steps=max_steps)
 
-    def step(self, dataloader: DataLoader, mode: str, verbose: bool=False) -> Dict[str, float]:
+    def step(
+            self, 
+            dataloader: DataLoader, 
+            mode: str, 
+            verbose: bool=False, 
+            max_steps: Optional[int]=None
+        ) -> Dict[str, float]:
         if mode not in self._valid_modes:
             raise ValueError(f"Invalid mode {mode} expected either one of {self._valid_modes}")
         getattr(self.model, mode)()
@@ -175,6 +181,8 @@ class TrainAudioSegPipeline:
             pbar = tqdm.tqdm(enumerate(dataloader))
 
         for count, (signals, classes, _) in pbar:
+            if max_steps is not None and count + 1 > max_steps:
+                break
             signals: torch.Tensor     = signals.to(self.device_or_rank)
             classes: torch.Tensor     = classes.to(self.device_or_rank, dtype=torch.int64).squeeze()
             pred_logits: torch.Tensor = self.model(signals)

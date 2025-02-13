@@ -201,7 +201,7 @@ def run(args: argparse.Namespace, config: Dict[str, Any]):
 
     for epoch in range(last_epoch, args.epochs):
         print_logs(f"train step @ epoch: {epoch} on device: {device_or_rank}", -1)
-        _ = pipeline.train(train_dataloader, verbose=(not args.no_verbose))
+        _ = pipeline.train(train_dataloader, verbose=(not args.no_verbose), max_steps=args.max_train_steps)
 
         if epoch % args.eval_interval == 0:
             print_logs(f"evaluation step @ epoch: {epoch} on device: {device_or_rank}", -1)
@@ -235,8 +235,9 @@ if __name__ == "__main__":
     parser.add_argument("--ext", type=str, default="wav", metavar="", help="Training data extension (eg: wav, mp3...)")
     parser.add_argument("--batch_size", type=int, default=128, metavar="", help="Training batch size")
     parser.add_argument("--epochs", type=int, default=200, metavar="", help="Number of training epochs")
+    parser.add_argument("--max_train_steps", type=int, default=400, metavar="", help="Maximum number of training steps (if set to -1 it goes all the way through the training set)")
     parser.add_argument("--checkpoint_interval", type=int, default=10, metavar="", help="Number of epochs before persisting checkpoint to disk")
-    parser.add_argument("--eval_interval", type=int, default=1, metavar="", help="Number of training steps before each evaluation")
+    parser.add_argument("--eval_interval", type=int, default=5, metavar="", help="Number of training steps before each evaluation")
     parser.add_argument("--no_verbose", action="store_true", help="Reduce training output verbosity")
     parser.add_argument("--lr_schedule", action="store_true", help="Use learning rate scheduler")
     parser.add_argument("--ignore_sample_error", action="store_true", help="This ignores errors caused by faulty annotations and logs a warning instead. PS: If you get a lot of warnings in a single epoch, you really need to check your annotations")
