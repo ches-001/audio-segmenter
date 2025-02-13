@@ -163,7 +163,7 @@ def run(args: argparse.Namespace, config: Dict[str, Any]):
     
     if not args.use_ddp or (args.use_ddp and device_or_rank in [0, "cuda:0"]):
         class_weights = train_dataset.get_class_weights(device_or_rank)
-        num_classes = torch.tensor(class_weights.shape[0], dtype=torch.int64, device=device_or_rank)
+        num_classes   = torch.tensor(class_weights.shape[0], dtype=torch.int64, device=device_or_rank)
     else:
         num_classes = torch.tensor([0], dtype=torch.int64, device=device_or_rank)
 
