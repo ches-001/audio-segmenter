@@ -77,18 +77,13 @@ class AudioSegmentationNet(nn.Module):
         in_features    = (3 * self.config["mfcc_config"]["melkwargs"]["n_mels"]) + 3
         self.hidden_fc = nn.Sequential(
             nn.Linear(in_features, network_config["hidden_layers_config"]["l1"]),
-            nn.BatchNorm1d(network_config["hidden_layers_config"]["l1"]),
-            nn.ReLU(),
+            nn.Sigmoid(),
 
             nn.Linear(network_config["hidden_layers_config"]["l1"], network_config["hidden_layers_config"]["l2"]),
-            nn.BatchNorm1d(network_config["hidden_layers_config"]["l2"]),
-            nn.ReLU(),
-            nn.Dropout(network_config["dropout"]),
+            nn.Sigmoid(),
 
             nn.Linear(network_config["hidden_layers_config"]["l2"], network_config["hidden_layers_config"]["l3"]),
-            nn.BatchNorm1d(network_config["hidden_layers_config"]["l3"]),
-            nn.ReLU(),
-            nn.Dropout(network_config["dropout"]),
+            nn.Sigmoid(),
         )
         if not network_config["use_harmonic_layer"]:
             self.final_fc = nn.Sequential(

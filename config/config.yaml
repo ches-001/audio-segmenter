@@ -1,10 +1,8 @@
 network_config:
   hidden_layers_config:
-    l1: 256
-    l2: 128
-    l3: 64
-
-  dropout: 0.0
+    l1: 30
+    l2: 20
+    l3: 10
 
   use_harmonic_layer: False
   
