@@ -1,13 +1,21 @@
 network_config:
   hidden_layers_config:
-    l1: 512
-    l2: 512
-    l3: 512
+    l1: 256
+    l2: 128
+    l3: 64
+
   dropout: 0.0
+
+  use_harmonic_layer: True
+  
+  harmonic_layer_config:
+    alpha: 0.01
+    c: 1.9879134860050892e-05
+    exp_pow_n: 1
 
 mfcc_config:
   melkwargs:
-    center: false
+    center: False
     mel_scale: htk
     n_mels: 20
     norm: slaney
@@ -19,7 +27,7 @@ mfcc_config:
 sample_duration_ms: 20
 n_temporal_context: 3
 new_sample_rate: 16000
-taper_input: true
+taper_input: True
 taper_window: hann
 audio_extension: wav
 
@@ -39,5 +47,5 @@ train_config:
     eta_min: 1.0e-04
     name: CosineAnnealingWarmRestarts
 
-  verbose: true
+  verbose: True
   num_workers: -1

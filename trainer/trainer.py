@@ -2,11 +2,11 @@ import os
 import yaml
 import time
 import tqdm
-import math
 import logging
 import torch
 import pandas as pd
 from datetime import datetime
+from torch.nn.functional import one_hot
 from modules.net import AudioSegmentationNet
 from matplotlib import pyplot as plt
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -163,7 +163,8 @@ class TrainAudioSegPipeline:
             raise ValueError(f"Invalid mode {mode} expected either one of {self._valid_modes}")
         getattr(self.model, mode)()
 
-        metrics = {}
+        metrics     = {}
+        num_classes = self.model.num_classes if not isinstance(self.model, DDP) else self.model.module.num_classes
 
         if self.ddp_mode:
             # invert progress bar position such that the last (rank n-1) is at
@@ -185,8 +186,10 @@ class TrainAudioSegPipeline:
                 break
             signals: torch.Tensor     = signals.to(self.device_or_rank)
             classes: torch.Tensor     = classes.to(self.device_or_rank, dtype=torch.int64).squeeze()
-            pred_logits: torch.Tensor = self.model(signals)
-            batch_loss: torch.Tensor  = self.loss_fn(pred_logits, classes)
+            onehot_classes            = one_hot(classes, num_classes=num_classes)
+            onehot_classes            = onehot_classes.to(self.device_or_rank, dtype=torch.float32)
+            pred_proba: torch.Tensor  = self.model(signals)
+            batch_loss: torch.Tensor  = self.loss_fn(pred_proba, onehot_classes)
 
             if mode == "train":
                 self.optimizer.zero_grad()
@@ -195,7 +198,7 @@ class TrainAudioSegPipeline:
 
             batch_metrics              = {}
             targets                    = classes.cpu().numpy()
-            pred                       = pred_logits.argmax(dim=-1).detach().cpu().numpy()
+            pred                       = pred_proba.argmax(dim=-1).detach().cpu().numpy()
             batch_metrics["loss"]      = batch_loss.item()
             batch_metrics["accuracy"]  = accuracy_score(targets, pred)
             batch_metrics["precision"] = precision_score(targets, pred)

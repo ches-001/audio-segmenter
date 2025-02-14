@@ -5,13 +5,50 @@ from utils import load_yaml
 from typing import *
 
 
+class HarmonicLayer(nn.Linear):
+    # PAPER: https://arxiv.org/abs/2502.01628
+    
+    # NOTE: They say this is an replacement of cross entropy, but it still uses cross entropy
+    # The paper is merely an alternative method to computing logits and mutually exclusive 
+    # probability scores for classification tasks and the likes, so this is not an replacement
+    # of cross entropy, its just an alternative to a Dense Layer + Softmax activation.
+    def __init__(
+            self, 
+            in_features: int, 
+            out_features: int, 
+            alpha: float=0.01, 
+            c: float=1/50304, 
+            exp_pow_n: float=1
+        ):
+        super(HarmonicLayer, self).__init__(in_features, out_features, bias=False)
+        self.alpha      = alpha
+        self.c          = c
+        self.exp_pow_n = exp_pow_n
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        n_embed = pow_n = x.shape[-1]
+        pow_n   = pow_n ** self.exp_pow_n
+        wx      = torch.einsum("bf, cf -> bc", x, self.weight)
+        xx      = torch.norm(x, dim=-1).pow(2)
+        ww      = torch.norm(self.weight, dim=-1).pow(2)
+        dist_sq = ww + xx[..., None] - (2 * wx)
+        dist_sq = dist_sq / n_embed
+        dist_sq = dist_sq / dist_sq.min(dim=-1, keepdim=True).values
+        dist_sq = dist_sq.pow(-pow_n)
+        proba   = dist_sq / dist_sq.sum(dim=-1, keepdim=True)
+        proba   = proba + (self.alpha * self.c)
+        proba   = proba.clip(min=0.0, max=1.0)
+        return proba
+        
+
+
 class AudioSegmentationNet(nn.Module):
     # PAPER: https://aclanthology.org/2016.iwslt-1.4/
     def __init__(
             self, 
             num_classes: int,
             sample_rate: int,
-            config: Union[str, Dict[str, Any]]="config/config.yaml"
+            config: Union[str, Dict[str, Any]]="config/config.yaml",
         ):
         super(AudioSegmentationNet, self).__init__()
         if isinstance(config, str):
@@ -21,26 +58,24 @@ class AudioSegmentationNet(nn.Module):
         else:
             raise ValueError(f"config is expected to be str or dict type got {type(config)}")
         
-        self.num_classes = num_classes
-
-        self.resampler = torchaudio.transforms.Resample(
+        self.num_classes      = num_classes
+        self.resampler        = torchaudio.transforms.Resample(
             orig_freq=sample_rate, 
             new_freq=self.config["new_sample_rate"]
         )
-
-        hop_length = n_fft = int(self.config["new_sample_rate"] * (self.config["sample_duration_ms"] / 1000))
+        hop_length            = n_fft = int(self.config["new_sample_rate"] * (self.config["sample_duration_ms"] / 1000))
         self.config["mfcc_config"]["melkwargs"].update({"hop_length": hop_length, "n_fft": n_fft})
 
         self.power_to_db_tfmr = torchaudio.transforms.AmplitudeToDB(top_db=80)
-        self.mfcc_tfmr = torchaudio.transforms.MFCC(
+        self.mfcc_tfmr        = torchaudio.transforms.MFCC(
             sample_rate=self.config["new_sample_rate"], 
             **self.config["mfcc_config"]
         )
         self.register_buffer("taper_window", torch.empty(0), persistent=True)        
 
         network_config = self.config["network_config"]
-        in_features = (3 * self.config["mfcc_config"]["melkwargs"]["n_mels"]) + 3
-        self.fc = nn.Sequential(
+        in_features    = (3 * self.config["mfcc_config"]["melkwargs"]["n_mels"]) + 3
+        self.hidden_fc = nn.Sequential(
             nn.Linear(in_features, network_config["hidden_layers_config"]["l1"]),
             nn.BatchNorm1d(network_config["hidden_layers_config"]["l1"]),
             nn.ReLU(),
@@ -54,9 +89,18 @@ class AudioSegmentationNet(nn.Module):
             nn.BatchNorm1d(network_config["hidden_layers_config"]["l3"]),
             nn.ReLU(),
             nn.Dropout(network_config["dropout"]),
-
-            nn.Linear(network_config["hidden_layers_config"]["l3"], self.num_classes),
         )
+        if not network_config["use_harmonic_layer"]:
+            self.final_fc = nn.Sequential(
+                nn.Linear(network_config["hidden_layers_config"]["l3"], self.num_classes),
+                nn.Softmax(dim=-1)
+            )
+        else:
+            self.final_fc = HarmonicLayer(
+                network_config["hidden_layers_config"]["l3"], 
+                self.num_classes, 
+                **network_config["harmonic_layer_config"]
+            )
         self.apply(self.xavier_init_weights)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -89,8 +133,9 @@ class AudioSegmentationNet(nn.Module):
         spectral_features  = torch.stack([mfcc.mean(dim=3), mfcc.std(dim=3), mfcc.std(dim=3).pow(2)], dim=-1)
         spectral_features  = spectral_features.reshape(spectral_features.shape[0], -1)
         features           = torch.cat([spectral_features, zcr_features], dim=1).contiguous()
-        logits             = self.fc(features)
-        return logits
+        features           = self.hidden_fc(features)
+        proba              = self.final_fc(features)
+        return proba
 
     def init_zeros_taper_window(self, taper_window: torch.Tensor):
         self.taper_window = torch.zeros_like(taper_window)

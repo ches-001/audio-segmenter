@@ -177,7 +177,7 @@ def run(args: argparse.Namespace, config: Dict[str, Any]):
     idx2class    = train_dataset.idx2class
     num_classes  = class_weights.shape[0]
     model        = make_model(num_classes, sample_rate, config)
-    loss_fn      = nn.CrossEntropyLoss(weight=class_weights.to(device_or_rank))
+    loss_fn      = nn.BCELoss()
     optimizer    = make_optimizer(model, config)
     lr_scheduler = make_lr_scheduler(optimizer, config) if args.lr_schedule else None
     pipeline     = TrainAudioSegPipeline(
