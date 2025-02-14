@@ -6,7 +6,7 @@ network_config:
 
   dropout: 0.0
 
-  use_harmonic_layer: True
+  use_harmonic_layer: False
   
   harmonic_layer_config:
     alpha: 0.01
