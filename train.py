@@ -50,7 +50,7 @@ def musan_generate_annotations(data_dir: str, ext: str) -> List[pd.DataFrame]:
     train_split = int(round(train_size * df.shape[0]))
     train_df    = df.iloc[0 : train_split]
     eval_df     = df.iloc[train_split: ]
-    
+
     os.makedirs(os.path.join(data_dir, "annotations"), exist_ok=True)
     train_df.to_csv(os.path.join(data_dir, "annotations", f"train_annotation.csv"), index=False)
     eval_df.to_csv(os.path.join(data_dir, "annotations", f"eval_annotation.csv"), index=False)
@@ -200,6 +200,8 @@ def run(args: argparse.Namespace, config: Dict[str, Any]):
             class_weights = torch.zeros(num_classes.item(), dtype=torch.int64, device=device_or_rank)
         ddp_broadcast(class_weights, src_rank=0)
 
+    print_logs(f"class weights: \n{class_weights}")
+    
     sample_rate  = train_dataset.sample_rate
     idx2class    = train_dataset.idx2class
     num_classes  = class_weights.shape[0]
