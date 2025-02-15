@@ -309,9 +309,11 @@ class AudioDataset(Dataset, ValidateConfigMixin):
         self.n_temporal_context  = config["n_temporal_context"]
         self.ext                 = ext
         self.ignore_sample_error = ignore_sample_error
-        temp_file                = os.path.join(
-            self.data_dir, self.annotations["file"].iloc[random.randint(0, self.annotations.shape[0]-1)] + f".{self.ext}"
-        )
+        temp_file                = self.annotations["file"].iloc[random.randint(0, self.annotations.shape[0]-1)]
+        if not os.path.isfile(temp_file):
+            temp_file            = os.path.join(
+                self.data_dir, temp_file + f".{self.ext}"
+            )
         audio_metadata           = torchaudio.info(temp_file, backend="soundfile")
         self.sample_rate         = audio_metadata.sample_rate
 
@@ -323,7 +325,7 @@ class AudioDataset(Dataset, ValidateConfigMixin):
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         file, start, end, class_, total_file_frames = self.annotations.iloc[idx, :]
 
-        path         = os.path.join(self.data_dir, f"{file}.{self.ext}")
+        path         = os.path.join(self.data_dir, f"{file}.{self.ext}") if not os.path.isfile(file) else file
         signal, _    = torchaudio.load(path, frame_offset=start, num_frames=end-start, backend="soundfile")
         class_       = torch.tensor([self.class2idx[class_]], dtype=torch.int64)
         timeframe    = torch.tensor([start, end], dtype=torch.float32) / self.sample_rate
