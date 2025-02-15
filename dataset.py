@@ -90,9 +90,7 @@ class MUSANIterableDataset(IterableDataset, SplitSegmentMixin, HandleWorkerJobsM
         self.class2idx          = {}
         self.idx2class          = {}
         self.files              = glob.glob(os.path.join(self.data_dir, "**", "*.wav"), recursive=True)
-        temp_file               = os.path.join(
-            self.data_dir, self.files[random.randint(0, len(self.files)-1)] + f".{self.ext}"
-        )
+        temp_file               = self.files[random.randint(0, len(self.files)-1)] + f".{self.ext}"
         audio_metadata          = torchaudio.info(temp_file, backend="soundfile")
         self.sample_rate        = audio_metadata.sample_rate
         self.only_labels        = only_labels
@@ -122,7 +120,7 @@ class MUSANIterableDataset(IterableDataset, SplitSegmentMixin, HandleWorkerJobsM
 
                 else:
                     signal, _    = torchaudio.load(
-                        os.path.join(self.data_dir, file + f".{self.ext}"),
+                        file,
                         frame_offset=sample["start"],
                         num_frames=sample["end"] - sample["start"],
                         backend="soundfile"
