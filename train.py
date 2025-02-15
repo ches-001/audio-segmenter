@@ -50,6 +50,8 @@ def musan_generate_annotations(data_dir: str, ext: str) -> List[pd.DataFrame]:
     train_split = int(round(train_size * df.shape[0]))
     train_df    = df.iloc[0 : train_split]
     eval_df     = df.iloc[train_split: ]
+    
+    os.makedirs(os.path.join(data_dir, "annotations"), exist_ok=True)
     train_df.to_csv(os.path.join(data_dir, "annotations", f"train_annotation.csv"), index=False)
     eval_df.to_csv(os.path.join(data_dir, "annotations", f"eval_annotation.csv"), index=False)
     return [train_df, eval_df]
