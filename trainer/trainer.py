@@ -163,8 +163,9 @@ class TrainAudioSegPipeline:
             raise ValueError(f"Invalid mode {mode} expected either one of {self._valid_modes}")
         getattr(self.model, mode)()
 
-        metrics     = {}
-        num_classes = self.model.num_classes if not isinstance(self.model, DDP) else self.model.module.num_classes
+        metrics        = {}
+        num_classes    = self.model.num_classes if not isinstance(self.model, DDP) else self.model.module.num_classes
+        metric_average = "binary" if num_classes == 2 else "micro"
 
         if self.ddp_mode:
             # invert progress bar position such that the last (rank n-1) is at
@@ -201,9 +202,9 @@ class TrainAudioSegPipeline:
             pred                       = pred_proba.argmax(dim=-1).detach().cpu().numpy()
             batch_metrics["loss"]      = batch_loss.item()
             batch_metrics["accuracy"]  = accuracy_score(targets, pred)
-            batch_metrics["precision"] = precision_score(targets, pred)
-            batch_metrics["recall"]    = recall_score(targets, pred)
-            batch_metrics["f1"]        = f1_score(targets, pred)
+            batch_metrics["precision"] = precision_score(targets, pred, average=metric_average)
+            batch_metrics["recall"]    = recall_score(targets, pred, average=metric_average)
+            batch_metrics["f1"]        = f1_score(targets, pred, average=metric_average)
 
             # sum metrics across all batches
             for key in batch_metrics.keys(): 
