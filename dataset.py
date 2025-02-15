@@ -99,7 +99,9 @@ class MUSANIterableDataset(IterableDataset, SplitSegmentMixin, HandleWorkerJobsM
             self.class2idx[c] = i
             self.idx2class[i] = c
     
-    def __iter__(self):
+    def __iter__(self) -> Generator[
+        Union[Dict[str, Any], Tuple[torch.Tensor, torch.Tensor, torch.Tensor]], Any, None
+    ]:
         files = self.split_files()
 
         for file in files:
