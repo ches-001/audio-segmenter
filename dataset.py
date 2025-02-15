@@ -1,9 +1,11 @@
 import os
+import glob
 import logging
 import torch
 import random
 import pandas as pd
 import torchaudio
+from pathlib import Path
 from tqdm import tqdm
 from torch.utils.data import IterableDataset, Dataset, get_worker_info
 from utils import load_yaml
@@ -11,8 +13,144 @@ from typing import *
 
 LOGGER = logging.getLogger(__name__)
 
+class SplitSegmentMixin:
+    sample_rate: int
+    sample_duration_ms: int
+    n_temporal_context: int
 
-class AudioIterableTrainDataset(IterableDataset):
+    def split_segments(self, current_segment: Dict[str, Any]) -> Generator[Dict[str, Any], Any, None]:
+        start        = int(current_segment["start"] * self.sample_rate)
+        end          = int(current_segment["end"] * self.sample_rate)
+        segment_size = int((self.sample_duration_ms / 1000) * self.sample_rate)
+        offset       = self.n_temporal_context * segment_size
+        rem          = end % segment_size
+        terminal_val = end + ((segment_size - rem) if rem > 0 else 0)
+        
+        i = start
+        while i < terminal_val:
+            yield {"start": i - offset, "end": i + offset + segment_size}
+            i += segment_size
+
+
+class HandleWorkerJobsMixin:
+    files: List[str]
+
+    def split_files(self):
+        worker_info = get_worker_info()
+
+        if not worker_info:
+            files = self.files
+        else:
+            n_workers = worker_info.num_workers
+            job_size  = len(self.files) // n_workers
+            if job_size == 0:
+                if worker_info.id > len(self.files) - 1:
+                    files = []
+                else:
+                    files = self.files
+            else:
+                job_start = job_size * worker_info.id
+                if worker_info.id < worker_info.num_workers - 1:
+                    files = self.files[job_start : job_start + job_size]
+                else:
+                    files =  self.files[job_start : ]
+            
+        random.shuffle(files)
+        return files
+    
+
+class ValidateConfigMixin:
+
+    def load_and_validate_config(self, config: Union[str, Dict[str, Any]]):
+        if isinstance(config, str):
+            config = load_yaml(config)
+        elif isinstance(config, dict):
+            config = config
+        else:
+            raise ValueError(f"config is expected to be str or dict type got {type(config)}")
+        return config
+
+
+class MUSANIterableDataset(IterableDataset, SplitSegmentMixin, HandleWorkerJobsMixin, ValidateConfigMixin):
+    def __init__(
+            self, 
+            data_dir: str, 
+            config: Union[str, Dict[str, Any]]="config/config.yaml", 
+            ext: str="wav",
+            only_labels: bool=False,
+        ):
+        config                  = self.load_and_validate_config(config)
+        self.data_dir           = data_dir
+        self.sample_duration_ms = config["sample_duration_ms"]
+        self.n_temporal_context = config["n_temporal_context"]
+        self.ext                = ext
+        self.classes            = sorted([
+            dirname for dirname in os.listdir(self.data_dir) if os.path.isdir(os.path.join(self.data_dir, dirname))
+        ])
+        self.class2idx          = {}
+        self.idx2class          = {}
+        self.files              = glob.glob(os.path.join(self.data_dir, "**", "*.wav"), recursive=True)
+        temp_file               = os.path.join(
+            self.data_dir, self.files[random.randint(0, len(self.files)-1)] + f".{self.ext}"
+        )
+        audio_metadata          = torchaudio.info(temp_file, backend="soundfile")
+        self.sample_rate        = audio_metadata.sample_rate
+        self.only_labels        = only_labels
+
+        for i, c in enumerate(self.class2idx):
+            self.class2idx[c] = i
+            self.idx2class[i] = c
+    
+    def __iter__(self):
+        files = self.split_files()
+
+        for file in files:
+            audio_metadata = torchaudio.info(file, backend="soundfile")
+            file_duration  = audio_metadata.num_frames / audio_metadata.num_frames
+            class_         = Path(file).parts[2]
+            segment        = {"start": 0.0, "end": file_duration, "class": class_}
+
+            for sample in self.split_segments(segment):
+                sample["start"] = max(0, sample["start"])
+                sample["end"]   = min(audio_metadata.num_frames, sample["end"])
+
+                if self.only_labels:
+                    sample = {
+                        "file": file, **sample, "class": class_, "total_file_frames": audio_metadata.num_frames
+                    }
+                    yield sample
+
+                else:
+                    signal, _    = torchaudio.load(
+                        os.path.join(self.data_dir, file + f".{self.ext}"),
+                        frame_offset=sample["start"],
+                        num_frames=sample["end"] - sample["start"],
+                        backend="soundfile"
+                    )
+                    class_       = torch.tensor([self.class2idx[class_]], dtype=torch.int64)
+                    timeframe    = torch.tensor([sample["start"], sample["end"]], dtype=torch.float32) / self.sample_rate
+                    ndigits      = 4
+                    timeframe    = torch.round(timeframe * 10**ndigits) / 10**ndigits # round to (ndigits=4) decimal places
+                    segment_size = int(self.sample_duration_ms / 1000 * self.sample_rate)
+                    offset       = self.n_temporal_context * segment_size
+                    context_size = (offset * 2) + segment_size
+                    
+                    if signal.shape[1] < context_size:
+                        zero_pad = torch.zeros((signal.shape[0], context_size - signal.shape[1], ), dtype=signal.dtype)
+
+                        if sample["start"] == 0:
+                            signal = torch.cat([zero_pad, signal], dim=1)
+
+                        elif sample["end"] == audio_metadata.num_frames:
+                            signal = torch.cat([signal, zero_pad], dim=1)
+
+                    if signal.shape[0] > 1:
+                        signal = signal.mean(dim=0, keepdim=True)
+
+                    yield signal, class_, timeframe
+
+
+class OpenBMATIterableTrainDataset(IterableDataset, SplitSegmentMixin, HandleWorkerJobsMixin, ValidateConfigMixin):
     def __init__(
             self, 
             data_dir: str,
@@ -23,13 +161,7 @@ class AudioIterableTrainDataset(IterableDataset):
             *,
             only_labels: bool=False
         ):
-        if isinstance(config, str):
-            config = load_yaml(config)
-        elif isinstance(config, dict):
-            config = config
-        else:
-            raise ValueError(f"config is expected to be str or dict type got {type(config)}")
-        
+        config                    = self.load_and_validate_config(config)
         self.data_dir             = data_dir
         self.annotations          = annotations
         self.only_labels          = only_labels
@@ -53,33 +185,14 @@ class AudioIterableTrainDataset(IterableDataset):
     def __iter__(self) -> Generator[
         Union[Dict[str, Any], Tuple[torch.Tensor, torch.Tensor, torch.Tensor]], Any, None
     ]:
-        worker_info = get_worker_info()
-
-        if not worker_info:
-            files = self.files
-        else:
-            n_workers = worker_info.num_workers
-            job_size  = len(self.files) // n_workers
-            if job_size == 0:
-                if worker_info.id > len(self.files) - 1:
-                    files = []
-                else:
-                    files = self.files
-            else:
-                job_start = job_size * worker_info.id
-                if worker_info.id < worker_info.num_workers - 1:
-                    files = self.files[job_start : job_start + job_size]
-                else:
-                    files =  self.files[job_start : ]
-            
-        random.shuffle(files)
+        files = self.split_files()
         file_idx = 0
-                
+        
         while file_idx < len(files):
             segment_idx  = 0
             segments     = self.annotations[self.files[file_idx]]
             exit_file    = False
-            meta_info    = torchaudio.info(
+            audio_metadata    = torchaudio.info(
                 os.path.join(self.data_dir, files[file_idx] + f".{self.ext}"), backend="soundfile"
             )
 
@@ -90,12 +203,12 @@ class AudioIterableTrainDataset(IterableDataset):
                     if exit_segment:
                         break
                     sample["start"] = max(0, sample["start"])
-                    sample["end"]   = min(meta_info.num_frames, sample["end"])
+                    sample["end"]   = min(audio_metadata.num_frames, sample["end"])
                     class_          = segments[str(segment_idx)]["class"]
 
                     if self.only_labels:
                         sample = {
-                            "file": files[file_idx], **sample, "class": class_, "total_file_frames": meta_info.num_frames
+                            "file": files[file_idx], **sample, "class": class_, "total_file_frames": audio_metadata.num_frames
                         }
                         yield sample
 
@@ -118,14 +231,14 @@ class AudioIterableTrainDataset(IterableDataset):
                             zero_pad = torch.zeros((signal.shape[0], context_size - signal.shape[1], ), dtype=signal.dtype)
                             if sample["start"] == 0:
                                 signal = torch.cat([zero_pad, signal], dim=1)
-                            elif sample["end"] == meta_info.num_frames:
+                            elif sample["end"] == audio_metadata.num_frames:
                                 signal = torch.cat([signal, zero_pad], dim=1)
                             else:
                                 # This should not occur
                                 err_msg = (
                                     f"loaded signal (from {files[file_idx]}) has a size {signal.shape[1]} that is less than"
                                     f" context_size: {context_size} when signal start time ({timeframe[0].item()}) is not 0 and"
-                                    f" end time ({timeframe[1].item()}) is not {meta_info.num_frames / self.sample_rate}"
+                                    f" end time ({timeframe[1].item()}) is not {audio_metadata.num_frames / self.sample_rate}"
                                 )
                                 if self.ignore_sample_error:
                                     LOGGER.warning(err_msg)
@@ -145,19 +258,6 @@ class AudioIterableTrainDataset(IterableDataset):
                 segment_idx += 1
 
             file_idx += 1
-
-    def split_segments(self, current_segment: Dict[str, Any]) -> Generator[Dict[str, Any], Any, None]:
-        start        = int(current_segment["start"] * self.sample_rate)
-        end          = int(current_segment["end"] * self.sample_rate)
-        segment_size = int((self.sample_duration_ms / 1000) * self.sample_rate)
-        offset       = self.n_temporal_context * segment_size
-        rem          = end % segment_size
-        terminal_val = end + ((segment_size - rem) if rem > 0 else 0)
-        
-        i = start
-        while i < terminal_val:
-            yield {"start": i - offset, "end": i + offset + segment_size}
-            i += segment_size
 
     def get_class_weights(self, device: Optional[Union[str, int]]=None) -> torch.Tensor:
         if not device: device = "cpu"
@@ -188,7 +288,7 @@ class AudioIterableTrainDataset(IterableDataset):
             self.idx2class[i] = c     
 
 
-class AudioDataset(Dataset):
+class AudioDataset(Dataset, ValidateConfigMixin):
     def __init__(
             self, 
             data_dir: str, 
@@ -197,12 +297,7 @@ class AudioDataset(Dataset):
             ext: str="wav",
             ignore_sample_error: bool=False
         ):
-        if isinstance(config, str):
-            config = load_yaml(config)
-        elif isinstance(config, dict):
-            config = config
-        else:
-            raise ValueError(f"config is expected to be str or dict type got {type(config)}")
+        config = self.load_and_validate_config(config)
         
         if isinstance(annotations, str):
             self.annotations = pd.read_csv(annotations)
@@ -281,15 +376,9 @@ class AudioDataset(Dataset):
             self.idx2class[i] = c 
 
 
-class AudioInferenceDataset(IterableDataset):
+class AudioInferenceDataset(IterableDataset, ValidateConfigMixin):
     def __init__(self, file_path: str, config: Union[str, Dict[str, Any]]):
-        if isinstance(config, str):
-            config = load_yaml(config)
-        elif isinstance(config, dict):
-            config = config
-        else:
-            raise ValueError(f"config is expected to be str or dict type got {type(config)}")
-        
+        config                  = self.load_and_validate_config(config)
         self.file_path          = file_path
         self.audio_metadata     = torchaudio.info(self.file_path, backend="soundfile")
         self.sample_duration_ms = config["sample_duration_ms"]

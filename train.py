@@ -11,7 +11,7 @@ import torch.nn as nn
 import numpy as np
 import pandas as pd
 from torch.utils.data import DataLoader, Sampler, DistributedSampler
-from dataset import AudioIterableTrainDataset, AudioDataset
+from dataset import MUSANIterableDataset, OpenBMATIterableTrainDataset, AudioDataset
 from modules.net import AudioSegmentationNet
 from trainer.trainer import TrainAudioSegPipeline
 from utils import load_yaml, load_json, save_json, ddp_setup, ddp_destroy, ddp_broadcast
@@ -20,8 +20,12 @@ from typing import *
 LOGGER      = logging.getLogger(__name__)
 CONFIG_PATH = "config/config.yaml"
 
+class DataFormat:
+    MUSAN    = "musan"
+    OpenBMAT = "openbmat"
 
-def generate_annotations(data_dir: str, annotator: str) -> List[pd.DataFrame]:
+
+def openbmat_generate_annotations(data_dir: str, annotator: str, ext: str="wav") -> List[pd.DataFrame]:
     train_path  = os.path.join(data_dir, "train")
     eval_path   = os.path.join(data_dir, "eval")
     config      = load_yaml(CONFIG_PATH)
@@ -29,11 +33,26 @@ def generate_annotations(data_dir: str, annotator: str) -> List[pd.DataFrame]:
     annotations = annotations["annotations"][annotator]
     dfs         = []
     for path, name in zip([train_path, eval_path], ["train", "eval"]):
-        dataset     = AudioIterableTrainDataset(path, annotations, config, ignore_sample_error=True, only_labels=True)
-        df = pd.DataFrame([sample for sample in tqdm.tqdm(dataset)])
+        dataset = OpenBMATIterableTrainDataset(
+            path, annotations, config, ignore_sample_error=True, ext=ext, only_labels=True
+        )
+        df      = pd.DataFrame([sample for sample in tqdm.tqdm(dataset)])
         df.to_csv(os.path.join(data_dir, "annotations", f"{name}_annotation.csv"), index=False)
         dfs.append(df)
     return dfs
+
+
+def musan_generate_annotations(data_dir: str, ext: str) -> List[pd.DataFrame]:
+    config      = load_yaml(CONFIG_PATH)
+    dataset     = MUSANIterableDataset(data_dir, config, ext=ext, only_labels=True)
+    df          = pd.DataFrame([sample for sample in tqdm.tqdm(dataset)]).sample(frac=1.0)
+    train_size  = 0.8
+    train_split = int(round(train_size * df.shape[0]))
+    train_df    = df.iloc[0 : train_split]
+    eval_df     = df.iloc[train_split: ]
+    train_df.to_csv(os.path.join(data_dir, "annotations", f"train_annotation.csv"), index=False)
+    eval_df.to_csv(os.path.join(data_dir, "annotations", f"eval_annotation.csv"), index=False)
+    return [train_df, eval_df]
 
 
 def make_dataset(
@@ -126,7 +145,13 @@ def run(args: argparse.Namespace, config: Dict[str, Any]):
         train_annotations = pd.read_csv(train_annotation_path)
         eval_annotations  = pd.read_csv(eval_annotation_path)
     else:
-        train_annotations, eval_annotations = generate_annotations(data_dir, args.annotator)
+        if args.data_format == DataFormat.OpenBMAT:
+            train_annotations, eval_annotations = openbmat_generate_annotations(data_dir, args.annotator, ext=args.ext)
+        elif args.data_format == DataFormat.MUSAN:
+            train_annotations, eval_annotations = musan_generate_annotations(data_dir, ext=args.ext)
+        else:
+            _formats = [DataFormat.OpenBMAT, DataFormat.MUSAN]
+            raise Exception(f"Invalid data format, expected one of {_formats}")
 
     train_dataset = make_dataset(train_path, train_annotations, config, args.ignore_sample_error, ext=args.ext)
     eval_dataset  = make_dataset(eval_path, eval_annotations, config, args.ignore_sample_error, args.ext)
@@ -232,6 +257,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Detection Network")
     parser.add_argument("--data_dir", type=str, metavar="", required=True, help="Dataset directory")
     parser.add_argument("--annotator", type=str, default="annotator_a", metavar="", help="Annotator label to use")
+    parser.add_argument("--data_format", type=str, choices=[DataFormat.OpenBMAT, DataFormat.MUSAN], default=DataFormat.OpenBMAT, metavar="", help="Format of data")
     parser.add_argument("--ext", type=str, default="wav", metavar="", help="Training data extension (eg: wav, mp3...)")
     parser.add_argument("--batch_size", type=int, default=128, metavar="", help="Training batch size")
     parser.add_argument("--epochs", type=int, default=200, metavar="", help="Number of training epochs")
