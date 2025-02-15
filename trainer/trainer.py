@@ -165,7 +165,7 @@ class TrainAudioSegPipeline:
 
         metrics        = {}
         num_classes    = self.model.num_classes if not isinstance(self.model, DDP) else self.model.module.num_classes
-        metric_average = "binary" if num_classes == 2 else "micro"
+        metric_average = "binary" if num_classes == 2 else "macro"
 
         if self.ddp_mode:
             # invert progress bar position such that the last (rank n-1) is at
