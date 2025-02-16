@@ -22,8 +22,8 @@ mfcc_config:
     win_length: null
   n_mfcc: 20
 
-sample_duration_ms: 20
-n_temporal_context: 3
+sample_duration_ms: 10
+n_temporal_context: 6
 new_sample_rate: 16000
 taper_input: True
 taper_window: hann
