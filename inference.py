@@ -15,7 +15,7 @@ from typing import *
 LOGGER = logging.getLogger(__name__)
 
 def smoothen_labels(labels: torch.Tensor, mode_context: int=20, min_cs_window: int=300):
-    # this function does an in-place operation
+    # this function does an in-place operation on labels tensor
     for i in range(0, labels.shape[0]):
         start     = max(0, i-mode_context)
         end       = min(labels.shape[0], i + mode_context + 1)

@@ -8,10 +8,10 @@ from typing import *
 class HarmonicLayer(nn.Linear):
     # PAPER: https://arxiv.org/abs/2502.01628
     
-    # NOTE: They say this is an replacement of cross entropy, but it still uses cross entropy
-    # The paper is merely an alternative method to computing logits and mutually exclusive 
-    # probability scores for classification tasks and the likes, so this is not an replacement
-    # of cross entropy, its just an alternative to a Dense Layer + Softmax activation.
+    # NOTE: They say this is loss function and a replacement of cross entropy, but it still uses
+    # cross entropy. The paper is merely an alternative method to computing logits and mutually exclusive
+    # probability scores for classification tasks and the likes, so this is in fact, neither a loss function
+    # nor a replacement of cross entropy, it is just an alternative to a Dense Layer + Softmax activation.
     def __init__(
             self, 
             in_features: int, 
