@@ -65,11 +65,11 @@ The repository supports two dataset formats:
             }
         }
     }
+    ```
 
     PS: if you happen to have multiple annotators annotating the same dataset, they can be contained in this single annotations.json file under different annotators (annotator_a, annotator_b, etc)
 
     Run the `download_musan.py`
-    ```
 
 ## HOW TO USE
 To train on a custom dataset with .wav files, simply run `python train.py --data_dir="data/musan" --ext="wav"`, there are other CLI options you should probably look into with `python train.py --help`
