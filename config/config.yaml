@@ -4,7 +4,7 @@ network_config:
     l2: 128
     l3: 64
 
-  use_harmonic_layer: False
+  use_harmonic_layer: True
   
   harmonic_layer_config:
     alpha: 0.01

@@ -232,7 +232,7 @@ def run(args: argparse.Namespace, config: Dict[str, Any]):
         print_logs(f"train step @ epoch: {epoch} on device: {device_or_rank}", -1)
         _ = pipeline.train(train_dataloader, verbose=(not args.no_verbose), max_steps=args.max_train_steps)
 
-        if epoch % args.eval_interval == 0:
+        if epoch % args.eval_interval == 0 or (epoch + 1 == args.epochs):
             print_logs(f"evaluation step @ epoch: {epoch} on device: {device_or_rank}", -1)
             eval_metrics = pipeline.evaluate(eval_dataloader, verbose=(not args.no_verbose))
 
