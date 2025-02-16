@@ -36,7 +36,7 @@ def openbmat_generate_annotations(data_dir: str, annotator: str, ext: str="wav")
         dataset = OpenBMATIterableTrainDataset(
             path, annotations, config, ignore_sample_error=True, ext=ext, only_labels=True
         )
-        df      = pd.DataFrame([sample for sample in tqdm.tqdm(dataset)])
+        df      = pd.DataFrame([sample for sample in tqdm.tqdm(dataset)]).sample(frac=1.0)
         df.to_csv(os.path.join(data_dir, "annotations", f"{name}_annotation.csv"), index=False)
         dfs.append(df)
     return dfs

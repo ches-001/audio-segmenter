@@ -34,7 +34,7 @@ def running_length_encoding(
     ) -> List[Dict[str, Any]]:
     final_pred = []
     for i in range(0, labels.shape[0]):
-        class_ = idx2class[int(labels[i].item())]
+        class_ = idx2class[str(int(labels[i].item()))]
         if i == 0:
             final_pred.append({
                 "start": timeframes[i][0].item(), 
@@ -65,18 +65,24 @@ def run(args: argparse.Namespace):
     dataset     = AudioInferenceDataset(args.file_path, config)
     dataloader  = DataLoader(dataset, batch_size=args.batch_size)
     model       = AudioSegmentationNet(num_classes, dataset.audio_metadata.sample_rate, config)
-    state_dict  = torch.load(args.model_path, map_location=device)
+    state_dict  = torch.load(args.model_path, map_location=device)["NETWORK_PARAMS"]
+
     model.to(device)
-    model.init_zeros_taper_window(state_dict["NETWORK_PARAMS"]["taper_window"])
-    model.load_state_dict(state_dict["NETWORK_PARAMS"])
+    if hasattr(model, "resampler") and "resampler.kernel" not in state_dict.keys():
+        resampler_state_dict =  model.resampler.state_dict()
+        if "kernel" in resampler_state_dict.keys():
+            state_dict["resampler.kernel"] = model.resampler.state_dict()["kernel"]
+        
+    model.init_zeros_taper_window(state_dict["taper_window"])
+    model.load_state_dict(state_dict)
     model.eval()
     
-    labels = []
+    labels     = []
     timeframes = []
     for batch_signals, batch_timeframes in tqdm.tqdm(dataloader):
         batch_signals = batch_signals.to(device)
         with torch.inference_mode():
-            logits: torch.Tensor = model(batch_signals)
+            logits: torch.Tensor       = model(batch_signals)
             batch_labels: torch.Tensor = logits.argmax(dim=1)
             labels.append(batch_labels)
             timeframes.append(batch_timeframes)
@@ -86,15 +92,16 @@ def run(args: argparse.Namespace):
 
     smoothen_labels(labels, args.mode_context, args.min_cs_window)
     final_labels = running_length_encoding(timeframes, labels, idx2class)
+    os.makedirs(output_dir, exist_ok=True)
     save_json(final_labels, os.path.join(output_dir, ".".join(filename.split(".")[:-1])) + ".json")
 
 
 if __name__ == "__main__":
-    model_path = f"saved_model/audio_segmentation/best_model/{AudioSegmentationNet.__name__}"
+    model_path = f"saved_model/audio_segmentation/best_model/{AudioSegmentationNet.__name__}.pth.tar"
 
     parser = argparse.ArgumentParser(description="Train Detection Network")
     parser.add_argument("--file_path", type=str, metavar="", required=True, help="Audio file path to run inference on")
-    parser.add_argument("--model_path", type=str, metavar="", default="model_path", help="Model path")
+    parser.add_argument("--model_path", type=str, default=model_path,metavar="", help="Model path")
     parser.add_argument("--batch_size", type=int, default=128, metavar="", help="Training batch size")
     parser.add_argument("--mode_context", type=int, default=20, metavar="", help="Mode context for label smoothening")
     parser.add_argument("--min_cs_window", type=int, default=300, metavar="", help="Minimum change support window size")

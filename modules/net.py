@@ -41,7 +41,6 @@ class HarmonicLayer(nn.Linear):
         return proba
         
 
-
 class AudioSegmentationNet(nn.Module):
     # PAPER: https://aclanthology.org/2016.iwslt-1.4/
     def __init__(
@@ -106,7 +105,7 @@ class AudioSegmentationNet(nn.Module):
 
         if self.config["taper_input"]:
             # taper the ends of the input signal:
-            if self.taper_window.numel() == 0:
+            if self.taper_window.numel() == 0 or ((not self.training) and self.taper_window.shape[0] != x.shape[2]):
                 self.taper_window = getattr(torch, f"{self.config['taper_window']}_window")(
                     x.shape[-1], 
                     periodic=False, 
