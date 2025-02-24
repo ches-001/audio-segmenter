@@ -405,6 +405,9 @@ class AudioInferenceDataset(IterableDataset, ValidateConfigMixin):
                 backend="soundfile"
             )
             
+            if signal.shape[0] > 1:
+                signal = signal.mean(dim=0, keepdim=True)
+            
             if signal.shape[1] < context_size:
                 if adj_start == 0:
                     zero_pad = torch.zeros((1, context_size - signal.shape[1]))
